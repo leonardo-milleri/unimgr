@@ -7,31 +7,15 @@
  */
 package org.opendaylight.unimgr.mef.nrp.ovs.tapi;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
-
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-
-import org.opendaylight.controller.md.sal.binding.api.DataBroker;
-import org.opendaylight.controller.md.sal.binding.api.DataObjectModification;
-import org.opendaylight.controller.md.sal.binding.api.DataTreeChangeListener;
-import org.opendaylight.controller.md.sal.binding.api.DataTreeIdentifier;
-import org.opendaylight.controller.md.sal.binding.api.DataTreeModification;
-import org.opendaylight.controller.md.sal.binding.api.ReadWriteTransaction;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import org.opendaylight.controller.md.sal.binding.api.*;
 import org.opendaylight.controller.md.sal.common.api.data.LogicalDatastoreType;
 import org.opendaylight.unimgr.mef.nrp.common.NrpDao;
 import org.opendaylight.unimgr.mef.nrp.common.ResourceNotAvailableException;
 import org.opendaylight.unimgr.mef.nrp.ovs.transaction.TopologyTransaction;
 import org.opendaylight.yang.gen.v1.urn.ietf.params.xml.ns.yang.ietf.inet.types.rev130715.Uri;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.LifecycleState;
-import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.TerminationDirection;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.Uuid;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.context.attrs.ServiceInterfacePoint;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.context.attrs.ServiceInterfacePointBuilder;
@@ -40,8 +24,7 @@ import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.service._
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePoint;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePointBuilder;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePointKey;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.ovsdb.rev150105.InterfaceTypeInternal;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.ovsdb.rev150105.OvsdbTerminationPointAugmentation;
+import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.LinkBuilder;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.NetworkTopology;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.TopologyId;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.Topology;
@@ -50,20 +33,25 @@ import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.Node;
 import org.opendaylight.yang.gen.v1.urn.tbd.params.xml.ns.yang.network.topology.rev131021.network.topology.topology.node.TerminationPoint;
 import org.opendaylight.yangtools.concepts.ListenerRegistration;
+import org.opendaylight.yangtools.yang.binding.DataObject;
 import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 /**
  * TopologyDataHandler listens to ovsdb topology and propagate significant changes to presto ext topology.
  *
  * @author bartosz.michalik@amartus.com
  */
-public class TopologyDataHandler implements DataTreeChangeListener<Node> {
+public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
     private static final Logger LOG = LoggerFactory.getLogger(TopologyDataHandler.class);
+    private static final String OVS_ENCAP_TOPOLOGY = "ovs-internal-topo";
     private static final String OVS_NODE = "ovs-node";
     private static final String DELIMETER = ":";
     private static final InstanceIdentifier<Topology> FLOW_TOPO_IID = InstanceIdentifier
@@ -100,12 +88,11 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
         });
 
         dataObjectModificationQualifier = new DataObjectModificationQualifier(dataBroker);
-        registerOvsdbTreeListener();
+        registerFlowTreeListener();
     }
 
-    private void registerOvsdbTreeListener() {
-        InstanceIdentifier<Node> nodeId = FLOW_TOPO_IID.child(Node.class);
-        registration = dataBroker.registerDataTreeChangeListener(new DataTreeIdentifier<>(LogicalDatastoreType.OPERATIONAL, nodeId), this);
+    private void registerFlowTreeListener() {
+        registration = dataBroker.registerDataTreeChangeListener(new DataTreeIdentifier<>(LogicalDatastoreType.OPERATIONAL, FLOW_TOPO_IID), this);
     }
 
     public void close() {
@@ -133,28 +120,44 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
     }
 
     @Override
-    public void onDataTreeChanged(@Nonnull Collection<DataTreeModification<Node>> collection) {
-        final Map<TerminationPoint,String> toAddMap = new HashMap<>();
-        final Map<TerminationPoint,String> toDeleteMap = new HashMap<>();
-        final Map<TerminationPoint,String> toUpdateMap = new HashMap<>();
+    public void onDataTreeChanged(@Nonnull Collection<DataTreeModification<Topology>> collection) {
+        final List<Node> toAddNodeMap = new ArrayList<>();
+        final List<Node> toDeleteNodeMap = new ArrayList<>();
+        final List<Node> toUpdateNodeMap = new ArrayList<>();
+        final List<Link> toAddLinkMap = new ArrayList<>();
+        final List<Link> toDeleteLinkMap = new ArrayList<>();
+        final List<Link> toUpdateLinkMap = new ArrayList<>();
+        final Map<TerminationPoint,String> toAddTpMap = new HashMap<>();
+        final Map<TerminationPoint,String> toDeleteTpMap = new HashMap<>();
+        final Map<TerminationPoint,String> toUpdateTpMap = new HashMap<>();
 
-        List<DataObjectModification> nodes = collection.stream()
+        List<DataObjectModification> topologies = collection.stream()
                 .map(DataTreeModification::getRootNode)
                 .collect(Collectors.toList());
 
-        dataObjectModificationQualifier.checkNodes(nodes,toAddMap,toUpdateMap,toDeleteMap);
+        dataObjectModificationQualifier.checkTopologies(topologies, toAddNodeMap, toDeleteNodeMap, toUpdateNodeMap,
+                toAddLinkMap, toDeleteLinkMap, toUpdateLinkMap,
+                toAddTpMap,toUpdateTpMap,toDeleteTpMap);
 
-        executeDbAction(addAction,toAddMap);
-        executeDbAction(updateAction,toUpdateMap);
-        executeDbAction(deleteAction,toDeleteMap);
+        executeDbAction(addNodeToOvsInternalTopoAction, toAddNodeMap);
+        executeDbAction(updateNodeToOvsInternalTopoAction, toUpdateNodeMap);
+        executeDbAction(deleteNodeToOvsInternalTopoAction, toDeleteNodeMap);
+
+        executeDbAction(addLinkToOvsInternalTopoAction, toAddLinkMap);
+        executeDbAction(updateLinkToOvsInternalTopoAction, toUpdateLinkMap);
+        executeDbAction(deleteLinkToOvsInternalTopoAction, toDeleteLinkMap);
+
+        executeDbAction(addSystemTopoAction,toAddTpMap);
+        executeDbAction(updateSystemTopoAction,toUpdateTpMap);
+        executeDbAction(deleteSystemTopoAction,toDeleteTpMap);
     }
 
-    BiConsumer<Map<TerminationPoint,String>,NrpDao> updateAction = (map,dao) -> {
+    BiConsumer<Map<TerminationPoint,String>,NrpDao> updateSystemTopoAction = (map, dao) -> {
         map.entrySet()
                 .forEach(entry -> {
-                    if (!isNep(entry.getKey())) {
-                        return;
-                    }
+//                    if (!isNep(entry.getKey())) {
+//                        return;
+//                    }
                     String nepId = OVS_NODE + DELIMETER + getFullPortName(entry.getValue(), entry.getKey().getTpId().getValue());
                     OwnedNodeEdgePoint nep;
                     if (dao.hasSip(nepId)) {
@@ -166,7 +169,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
                 });
     };
 
-    BiConsumer<Map<TerminationPoint,String>,NrpDao> deleteAction = (map,dao) -> {
+    BiConsumer<Map<TerminationPoint,String>,NrpDao> deleteSystemTopoAction = (map, dao) -> {
         map.entrySet()
                 .forEach(entry -> {
                     String nepId = OVS_NODE + DELIMETER + getFullPortName(entry.getValue(), entry.getKey().getTpId().getValue());
@@ -174,9 +177,84 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
                 });
     };
 
-    BiConsumer<Map<TerminationPoint,String>,NrpDao> addAction = (map,dao) -> {
+    BiConsumer<List<? extends DataObject>,NrpDao> addNodeToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(node -> addNodeToOvsInternalTopo(dao, (Node) node));
+    };
+
+    BiConsumer<List<? extends DataObject>,NrpDao> updateNodeToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(node -> updateNodeToOvsInternalTopo(dao, (Node) node));
+    };
+
+    BiConsumer<List<? extends DataObject>,NrpDao> deleteNodeToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(node -> deleteNodeToOvsInternalTopo(dao, (Node) node));
+    };
+
+    BiConsumer<List<? extends DataObject>,NrpDao> addLinkToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(link -> addLinkToOvsInternalTopo(dao, (Link) link));
+    };
+
+    private void addLinkToOvsInternalTopo(NrpDao dao, Link link) {
+        LinkBuilder builder = new LinkBuilder();
+        List<Uuid> nodeEdgeList = new ArrayList<>();
+        nodeEdgeList.add(new Uuid(link.getSource().getSourceTp().getValue()));
+        nodeEdgeList.add(new Uuid(link.getDestination().getDestTp().getValue()));
+        builder.setUuid(new Uuid(link.getLinkId().getValue())).setNodeEdgePoint(nodeEdgeList);
+        dao.updateInternalLink(OVS_ENCAP_TOPOLOGY, builder.build());
+    }
+
+    BiConsumer<List<? extends DataObject>,NrpDao> updateLinkToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(link -> updateLinkToOvsInternalTopo(dao, (Link) link));
+    };
+
+    private void updateLinkToOvsInternalTopo(NrpDao dao, Link link) {
+        addLinkToOvsInternalTopo(dao, link);
+    }
+
+    BiConsumer<List<? extends DataObject>,NrpDao> deleteLinkToOvsInternalTopoAction = (list, dao) -> {
+        list.forEach(link -> deleteLinkToOvsInternalTopo(dao, (Link) link));
+    };
+
+    private void deleteLinkToOvsInternalTopo(NrpDao dao, Link link) {
+        LinkBuilder builder = new LinkBuilder();
+        List<Uuid> nodeEdgeList = new ArrayList<>();
+        nodeEdgeList.add(new Uuid(link.getSource().getSourceTp().getValue()));
+        nodeEdgeList.add(new Uuid(link.getDestination().getDestTp().getValue()));
+        builder.setUuid(new Uuid(link.getLinkId().getValue())).setNodeEdgePoint(nodeEdgeList);
+        dao.deleteInternalLink(OVS_ENCAP_TOPOLOGY, builder.build());
+    }
+
+    private void deleteNodeToOvsInternalTopo(NrpDao dao, Node node) {
+        dao.deleteInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId());
+    }
+
+    private void updateNodeToOvsInternalTopo(NrpDao dao, Node node) {
+        List<OwnedNodeEdgePoint> edgePoints = new ArrayList<>();
+        if (node.getTerminationPoint() != null) {
+            edgePoints = node.getTerminationPoint().stream().map(tp -> toOwnedNodeEdgePoint(tp)).collect(Collectors.toList());
+        }
+        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId(), edgePoints);
+    }
+
+    private void addNodeToOvsInternalTopo(NrpDao dao, Node node) {
+        List<OwnedNodeEdgePoint> edgePoints = new ArrayList<>();
+        if (node.getTerminationPoint() != null) {
+            edgePoints = node.getTerminationPoint().stream().map(tp -> toOwnedNodeEdgePoint(tp)).collect(Collectors.toList());
+        }
+        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId(), edgePoints);
+    }
+
+    private OwnedNodeEdgePoint toOwnedNodeEdgePoint(TerminationPoint tp) {
+        Uuid uuid = new Uuid(tp.getTpId().getValue());
+        return new OwnedNodeEdgePointBuilder()
+                .setUuid(uuid)
+                .setKey(new OwnedNodeEdgePointKey(uuid))
+//                .setMappedServiceInterfacePoint(Collections.singletonList(sipUuid))
+                .build();
+    }
+
+    BiConsumer<Map<TerminationPoint,String>,NrpDao> addSystemTopoAction = (map, dao) -> {
         List<OwnedNodeEdgePoint> newNeps = getNewNeps(map);
-        newNeps.forEach(nep -> addEndpoint(dao,nep.getKey().getUuid().getValue()));
+        newNeps.forEach(nep -> addEndpoint(dao, nep.getKey().getUuid().getValue()));
     };
 
     private void executeDbAction(BiConsumer<Map<TerminationPoint,String>,NrpDao> action,Map<TerminationPoint,String> map) {
@@ -186,6 +264,28 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
         NrpDao dao = new NrpDao(topoTx);
 
         action.accept(map,dao);
+
+        Futures.addCallback(topoTx.submit(), new FutureCallback<Void>() {
+
+            @Override
+            public void onSuccess(@Nullable Void result) {
+                LOG.debug("Ovs TAPI node action executed successfully");
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                LOG.warn("Ovs TAPI node action execution failed due to an error", t);
+            }
+        });
+    }
+
+    private void executeDbAction(BiConsumer<List<? extends DataObject>, NrpDao> action, List<? extends DataObject> list) {
+        if (list.isEmpty())
+            return ;
+        final ReadWriteTransaction topoTx = dataBroker.newReadWriteTransaction();
+        NrpDao dao = new NrpDao(topoTx);
+
+        action.accept(list,dao);
 
         Futures.addCallback(topoTx.submit(), new FutureCallback<Void>() {
 
@@ -261,6 +361,9 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
         try {
             org.opendaylight.yang.gen.v1.urn.opendaylight.inventory.rev130819.nodes.Node node = topologyTransaction.readNodeFromTpID(terminationPoint.getTpId().getValue());
             String ofPortName = terminationPoint.getTpId().getValue(); // node.getId().getValue()+":"+ofPortNumber;
+            if (ofPortName.contains("LOCAL")) {
+                return false;
+            }
             List<Link> links = topologyTransaction.readLinks(node);
             return !links.stream()
                     .anyMatch(link -> link.getSource().getSourceTp().getValue().equals(ofPortName));

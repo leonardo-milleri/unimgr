@@ -130,7 +130,7 @@ public class TopologyTransaction {
         Optional<Topology> flowTopology
                 = MdsalUtils.readTopology(dataBroker, LogicalDatastoreType.OPERATIONAL, FLOW_TOPOLOGY_NAME);
 
-        if (flowTopology.isPresent()) {
+        if (flowTopology.isPresent() && flowTopology.get().getLink() != null) {
             String nodeId = node.getId().getValue();
             List<Link> links = flowTopology.get().getLink()
                                            .stream()
