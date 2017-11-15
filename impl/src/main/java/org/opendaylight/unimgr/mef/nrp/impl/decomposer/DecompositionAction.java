@@ -8,10 +8,7 @@
 
 package org.opendaylight.unimgr.mef.nrp.impl.decomposer;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -57,24 +54,29 @@ public class DecompositionAction {
     List<Subrequrest> decompose() throws FailureResult {
         Graph<Vertex, DefaultEdge> graph = prepareData();
 
+
+
         List<Vertex> vertexes = endpoints.stream().map(e -> sipToNep.get(e.getEndpoint().getServiceInterfacePoint())).collect(Collectors.toList());
 
         assert vertexes.size() > 1;
 
-        if (vertexes.size() > 2) {
-            throw new IllegalStateException("currently only point to point is supported");
+        Set<GraphPath<Vertex, DefaultEdge>> paths = new HashSet<>();
+
+        for(int i = 0; i < vertexes.size(); ++i) {
+            for(int j = i+1; j < vertexes.size(); ++j) {
+                paths.add(DijkstraShortestPath.findPathBetween(graph, vertexes.get(i), vertexes.get(j)));
+            }
         }
 
-        GraphPath<Vertex, DefaultEdge> path = DijkstraShortestPath.findPathBetween(graph, vertexes.get(0), vertexes.get(1));
 
-        if (path == null) {
-            return null;
-        }
-
-        return path.getVertexList().stream().collect(Collectors.groupingBy(v -> v.getNodeUuid()))
-                .entrySet().stream().map(e -> {
-                    return new Subrequrest(e.getKey(), e.getValue().stream().map(v -> toEndPoint(v)).collect(Collectors.toList()));
+        List<Subrequrest> result = paths.stream()
+                .flatMap(gp -> gp.getVertexList().stream()).collect(Collectors.groupingBy(Vertex::getNodeUuid))
+                .entrySet().stream()
+                .map(e -> {
+                    Set<EndPoint> endpoints = e.getValue().stream().map(this::toEndPoint).collect(Collectors.toSet());
+                    return new Subrequrest(e.getKey(), new ArrayList<>(endpoints));
                 }).collect(Collectors.toList());
+        return result.isEmpty() ? null : result;
     }
 
     private EndPoint toEndPoint(Vertex v) {

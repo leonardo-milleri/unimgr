@@ -12,6 +12,8 @@ import org.opendaylight.yang.gen.v1.urn.mef.yang.nrp._interface.rev170712.NrpCon
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.Uuid;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.connectivity.rev170712.ConnectivityServiceEndPoint;
 
+import java.util.Objects;
+
 /**
  * @see ConnectivityServiceEndPoint
  * @author bartosz.michalik@amartus.com
@@ -52,5 +54,20 @@ public class EndPoint {
     public EndPoint setSystemNepUuid(Uuid systemNepUuid) {
         this.systemNepUuid = systemNepUuid;
         return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        EndPoint endPoint = (EndPoint) o;
+        return Objects.equals(endpoint, endPoint.endpoint) &&
+                Objects.equals(attrs, endPoint.attrs) &&
+                Objects.equals(systemNepUuid, endPoint.systemNepUuid);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(endpoint, attrs, systemNepUuid);
     }
 }

@@ -6,7 +6,7 @@
  * and is available at http://www.eclipse.org/legal/epl-v10.html
  */
 
-package org.opendaylight.unimgr.mef.nrp.impl;
+package org.opendaylight.unimgr.mef.nrp.impl.decomposer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -22,7 +22,8 @@ import org.junit.rules.ExpectedException;
 import org.opendaylight.controller.md.sal.binding.api.ReadWriteTransaction;
 import org.opendaylight.unimgr.mef.nrp.api.FailureResult;
 import org.opendaylight.unimgr.mef.nrp.api.Subrequrest;
-import org.opendaylight.unimgr.mef.nrp.impl.decomposer.BasicDecomposer;
+import org.opendaylight.unimgr.mef.nrp.impl.AbstractTestWithTopo;
+import org.opendaylight.unimgr.mef.nrp.impl.NrpInitializer;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.common.rev170712.OperationalState;
 import org.opendaylight.yangtools.yang.common.OperationFailedException;
 
