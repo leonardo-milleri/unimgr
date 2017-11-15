@@ -86,6 +86,21 @@ public class TopologyTransaction {
         throw new ResourceNotAvailableException(String.format(NODE_NOT_FOUND_ERROR_MESSAGE, portName));
     }
 
+    public Node readNodeFromTpID(String tpId) throws ResourceNotAvailableException {
+        for (NullAwareDatastoreGetter<Node> node : readNodes()) {
+            if (node.get().isPresent()) {
+                for (NodeConnector nodeConnector:node.get().get().getNodeConnector()) {
+                    if (tpId.equals(nodeConnector.getId().getValue())) {
+                        return node.get().get();
+                    }
+                }
+            }
+        }
+
+        LOG.warn(String.format(NODE_NOT_FOUND_ERROR_MESSAGE, tpId));
+        throw new ResourceNotAvailableException(String.format(NODE_NOT_FOUND_ERROR_MESSAGE, tpId));
+    }
+
     public Node readNodeOF(String ofportName) throws ResourceNotAvailableException {
         String ofNodeName = ofportName.split(":")[0]+":"+ofportName.split(":")[1];
         Nodes nodes = readOpenFLowTopology(dataBroker);

@@ -40,9 +40,10 @@ public class DataObjectModificationQualifier {
                 //new ovs node
                 case WRITE :{
                     n = (Node) node.getDataAfter();
-                    if (!isOvs.apply(n) || n.getTerminationPoint()==null)
+                    if (/*!isOvs.apply(n) || */n.getTerminationPoint()==null)
                         break;
-                    String bridgeName = n.getAugmentation(OvsdbBridgeAugmentation.class).getBridgeName().getValue();
+//                    String bridgeName = n.getAugmentation(OvsdbBridgeAugmentation.class).getBridgeName().getValue();
+                    String bridgeName = n.getNodeId().getValue();
                     n.getTerminationPoint().forEach(tp -> toAddMap.put(tp,bridgeName));
                 } break;
                 case SUBTREE_MODIFIED:{
@@ -51,7 +52,7 @@ public class DataObjectModificationQualifier {
                 //whole ovs-node eg. s1 deleted
                 case DELETE:{
                     n = (Node) node.getDataBefore();
-                    if (!isOvs.apply(n) || n.getTerminationPoint()==null)
+                    if (/*!isOvs.apply(n) || */n.getTerminationPoint()==null)
                         break;
                     String bridgeName = n.getAugmentation(OvsdbBridgeAugmentation.class).getBridgeName().getValue();
                     n.getTerminationPoint().forEach(tp -> toDeleteMap.put(tp,bridgeName));
@@ -65,8 +66,8 @@ public class DataObjectModificationQualifier {
 
     private void checkTerminationPoints(DataObjectModification node, Map<TerminationPoint,String> toAddMap, Map<TerminationPoint,String> toUpdateMap, Map<TerminationPoint,String> toDeleteMap) {
         Node n = (Node) node.getDataAfter();
-        if (!isOvs.apply(n))
-            return ;
+//        if (!isOvs.apply(n))
+//            return ;
         String bridgeName = n.getAugmentation(OvsdbBridgeAugmentation.class).getBridgeName().getValue();
         Collection<DataObjectModification<? extends DataObject>> modifiedChildren = node.getModifiedChildren();
 

@@ -66,9 +66,9 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
     private static final Logger LOG = LoggerFactory.getLogger(TopologyDataHandler.class);
     private static final String OVS_NODE = "ovs-node";
     private static final String DELIMETER = ":";
-    private static final InstanceIdentifier<Topology> OVSDB_TOPO_IID = InstanceIdentifier
+    private static final InstanceIdentifier<Topology> FLOW_TOPO_IID = InstanceIdentifier
             .create(NetworkTopology.class)
-            .child(Topology.class, new TopologyKey(new TopologyId(new Uri("ovsdb:1"))));
+            .child(Topology.class, new TopologyKey(new TopologyId(new Uri("flow:1"))));
     private ListenerRegistration<TopologyDataHandler> registration;
     private TopologyTransaction topologyTransaction;
     private DataObjectModificationQualifier dataObjectModificationQualifier;
@@ -104,7 +104,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
     }
 
     private void registerOvsdbTreeListener() {
-        InstanceIdentifier<Node> nodeId = OVSDB_TOPO_IID.child(Node.class);
+        InstanceIdentifier<Node> nodeId = FLOW_TOPO_IID.child(Node.class);
         registration = dataBroker.registerDataTreeChangeListener(new DataTreeIdentifier<>(LogicalDatastoreType.OPERATIONAL, nodeId), this);
     }
 
@@ -152,6 +152,9 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
     BiConsumer<Map<TerminationPoint,String>,NrpDao> updateAction = (map,dao) -> {
         map.entrySet()
                 .forEach(entry -> {
+                    if (!isNep(entry.getKey())) {
+                        return;
+                    }
                     String nepId = OVS_NODE + DELIMETER + getFullPortName(entry.getValue(), entry.getKey().getTpId().getValue());
                     OwnedNodeEdgePoint nep;
                     if (dao.hasSip(nepId)) {
@@ -238,25 +241,26 @@ public class TopologyDataHandler implements DataTreeChangeListener<Node> {
     }
 
     private List<OwnedNodeEdgePoint> getNewNeps(Map<TerminationPoint,String> toAddMap) {
-        return toAddMap.entrySet().stream()
+        return toAddMap.entrySet().stream().filter(entry -> isNep(entry.getKey()))
                 .map(entry -> createNep(getFullPortName(entry.getValue(),entry.getKey().getTpId().getValue())) )
                 .collect(Collectors.toList());
     }
 
     //TODO: write better implementation
     private boolean isNep(TerminationPoint terminationPoint) {
-        OvsdbTerminationPointAugmentation ovsdbTerminationPoint = terminationPoint.getAugmentation(OvsdbTerminationPointAugmentation.class);
-        if ( ovsdbTerminationPoint==null || (ovsdbTerminationPoint.getInterfaceType()!=null && ovsdbTerminationPoint.getInterfaceType().equals(InterfaceTypeInternal.class))) {
-            return false;
-        }
+//        OvsdbTerminationPointAugmentation ovsdbTerminationPoint = terminationPoint.getAugmentation(OvsdbTerminationPointAugmentation.class);
+//        if ( ovsdbTerminationPoint==null || (ovsdbTerminationPoint.getInterfaceType()!=null && ovsdbTerminationPoint.getInterfaceType().equals(InterfaceTypeInternal.class))) {
+//            return false;
+//        }
+//
+//        if ( ovsdbTerminationPoint.getOfport() == null )
+//            return false;
 
-        if ( ovsdbTerminationPoint.getOfport() == null )
-            return false;
-
-        String ofPortNumber = ovsdbTerminationPoint.getOfport().toString();
+//        String ofPortNumber = ovsdbTerminationPoint.getOfport().toString();
+//        String ofPortNumber = terminationPoint.getTpId().getValue();
         try {
-            org.opendaylight.yang.gen.v1.urn.opendaylight.inventory.rev130819.nodes.Node node = topologyTransaction.readNode(terminationPoint.getTpId().getValue());
-            String ofPortName = node.getId().getValue()+":"+ofPortNumber;
+            org.opendaylight.yang.gen.v1.urn.opendaylight.inventory.rev130819.nodes.Node node = topologyTransaction.readNodeFromTpID(terminationPoint.getTpId().getValue());
+            String ofPortName = terminationPoint.getTpId().getValue(); // node.getId().getValue()+":"+ofPortNumber;
             List<Link> links = topologyTransaction.readLinks(node);
             return !links.stream()
                     .anyMatch(link -> link.getSource().getSourceTp().getValue().equals(ofPortName));
