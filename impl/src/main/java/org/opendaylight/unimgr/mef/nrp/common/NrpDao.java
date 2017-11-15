@@ -26,10 +26,12 @@ import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.connectivity.rev170712.con
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.connectivity.rev170712.connectivity.context.ConnectivityService;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.connectivity.rev170712.connectivity.context.ConnectivityServiceKey;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.Context1;
+import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.Link;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.get.node.edge.point.details.output.NodeEdgePoint;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePoint;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePointBuilder;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.node.OwnedNodeEdgePointKey;
+import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.LinkKey;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.context.Topology;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.context.TopologyKey;
 import org.opendaylight.yang.gen.v1.urn.mef.yang.tapi.topology.rev170712.topology.Node;
@@ -70,8 +72,47 @@ public class NrpDao  {
                 .setUuid(uuid)
                 .setOwnedNodeEdgePoint(neps)
                 .build();
-        tx.put(LogicalDatastoreType.OPERATIONAL, node(nodeId), node);
+        tx.put(LogicalDatastoreType.OPERATIONAL, systemNode(nodeId), node);
         return node;
+    }
+
+    public Node updateInternalNode(String topoId, String nodeId, List<OwnedNodeEdgePoint> neps) {
+        verifyTx();
+        Uuid uuid = new Uuid(nodeId);
+        Node node = new NodeBuilder()
+                .setKey(new NodeKey(uuid))
+                .setUuid(uuid)
+                .setOwnedNodeEdgePoint(neps)
+                .build();
+        tx.put(LogicalDatastoreType.OPERATIONAL, internalNode(topoId, nodeId), node);
+        return node;
+    }
+
+    public Node deleteInternalNode(String topoId, String nodeId) {
+        verifyTx();
+        Uuid uuid = new Uuid(nodeId);
+        Node node = new NodeBuilder()
+                .setKey(new NodeKey(uuid))
+                .setUuid(uuid)
+                .build();
+        tx.delete(LogicalDatastoreType.OPERATIONAL, internalNode(topoId, nodeId));
+        return node;
+    }
+
+    public Link updateLink(String topoId, Link link)
+    {
+        verifyTx();
+
+        tx.put(LogicalDatastoreType.OPERATIONAL,topo(topoId).child(Link.class, link.getKey()),link);
+        return link;
+    }
+
+    public Link deleteLink(String topoId, Link link)
+    {
+        verifyTx();
+
+        tx.delete(LogicalDatastoreType.OPERATIONAL,topo(topoId).child(Link.class, link.getKey()));
+        return link;
     }
 
     private void verifyTx() {
@@ -90,13 +131,13 @@ public class NrpDao  {
     }
 
     public void updateNep(Uuid nodeId, OwnedNodeEdgePoint nep) {
-        InstanceIdentifier<OwnedNodeEdgePoint> nodeIdent = node(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(nep.getUuid()));
+        InstanceIdentifier<OwnedNodeEdgePoint> nodeIdent = systemNode(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(nep.getUuid()));
         tx.put(LogicalDatastoreType.OPERATIONAL, nodeIdent, nep);
     }
 
     public void removeNep(String nodeId, String nepId, boolean removeSips) {
         verifyTx();
-        InstanceIdentifier<OwnedNodeEdgePoint> nepIdent = node(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(new Uuid(nepId)));
+        InstanceIdentifier<OwnedNodeEdgePoint> nepIdent = systemNode(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(new Uuid(nepId)));
         try {
             Optional<OwnedNodeEdgePoint> opt = tx.read(LogicalDatastoreType.OPERATIONAL, nepIdent).checkedGet();
             if (opt.isPresent()) {
@@ -119,7 +160,7 @@ public class NrpDao  {
     }
 
     public OwnedNodeEdgePoint readNep(String nodeId, String nepId) throws ReadFailedException {
-        KeyedInstanceIdentifier<OwnedNodeEdgePoint, OwnedNodeEdgePointKey> nepKey = node(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(new Uuid(nepId)));
+        KeyedInstanceIdentifier<OwnedNodeEdgePoint, OwnedNodeEdgePointKey> nepKey = systemNode(nodeId).child(OwnedNodeEdgePoint.class, new OwnedNodeEdgePointKey(new Uuid(nepId)));
         return rtx.read(LogicalDatastoreType.OPERATIONAL, nepKey).checkedGet().orNull();
     }
 
@@ -153,17 +194,26 @@ public class NrpDao  {
                 .child(Topology.class, new TopologyKey(new Uuid(topoId)));
     }
 
-    public static InstanceIdentifier<Node> node(String nodeId) {
-        return node(new Uuid(nodeId));
+    public static InstanceIdentifier<Node> systemNode(String nodeId) {
+        return systemNode(new Uuid(nodeId));
     }
 
-    public static InstanceIdentifier<Node> node(Uuid nodeId) {
+    public static InstanceIdentifier<Node> systemNode(Uuid nodeId) {
         return topo(TapiConstants.PRESTO_SYSTEM_TOPO).child(Node.class, new NodeKey(nodeId));
+    }
+
+    public static InstanceIdentifier<Node> internalNode(String topoId, String nodeId) {
+        return systemNode(new Uuid(nodeId));
+    }
+
+    public static InstanceIdentifier<Node> internalNode(String topoId, Uuid nodeId) {
+        return topo(topoId).child(Node.class, new NodeKey(nodeId));
     }
 
     public static InstanceIdentifier<Node> abstractNode() {
         return topo(TapiConstants.PRESTO_EXT_TOPO).child(Node.class, new NodeKey(new Uuid(TapiConstants.PRESTO_ABSTRACT_NODE)));
     }
+
 
     public void removeSips(Stream<Uuid>  uuids) {
         verifyTx();
@@ -180,7 +230,7 @@ public class NrpDao  {
         verifyTx();
         if (removeSips) {
             try {
-                Optional<Node> opt = tx.read(LogicalDatastoreType.OPERATIONAL, node(nodeId)).checkedGet();
+                Optional<Node> opt = tx.read(LogicalDatastoreType.OPERATIONAL, systemNode(nodeId)).checkedGet();
                 if (opt.isPresent()) {
                     removeSips(opt.get().getOwnedNodeEdgePoint().stream().flatMap(nep -> nep.getMappedServiceInterfacePoint() == null
                                                                                   ? Stream.empty()
@@ -192,7 +242,7 @@ public class NrpDao  {
             }
         }
 
-        tx.delete(LogicalDatastoreType.OPERATIONAL, node(nodeId));
+        tx.delete(LogicalDatastoreType.OPERATIONAL, systemNode(nodeId));
     }
 
     public void updateAbstractNep(OwnedNodeEdgePoint nep) {
