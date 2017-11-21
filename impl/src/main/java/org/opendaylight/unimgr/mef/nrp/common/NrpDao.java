@@ -64,16 +64,21 @@ public class NrpDao  {
 
     private Function<NodeEdgePoint, OwnedNodeEdgePoint> toNep = nep -> new OwnedNodeEdgePointBuilder(nep).build();
 
-    public Node createSystemNode(String nodeId, List<OwnedNodeEdgePoint> neps) {
+    public Node createSystemNode(String nodeId, List<OwnedNodeEdgePoint> neps, Uuid encapTopology) {
         verifyTx();
         Uuid uuid = new Uuid(nodeId);
         Node node = new NodeBuilder()
                 .setKey(new NodeKey(uuid))
                 .setUuid(uuid)
                 .setOwnedNodeEdgePoint(neps)
+                .setEncapTopology(encapTopology)
                 .build();
         tx.put(LogicalDatastoreType.OPERATIONAL, systemNode(nodeId), node);
         return node;
+    }
+
+    public Node createSystemNode(String nodeId, List<OwnedNodeEdgePoint> neps) {
+        return createSystemNode(nodeId, neps, null);
     }
 
     public Node updateInternalNode(String topoId, String nodeId, List<OwnedNodeEdgePoint> neps) {
@@ -84,7 +89,7 @@ public class NrpDao  {
                 .setUuid(uuid)
                 .setOwnedNodeEdgePoint(neps)
                 .build();
-        tx.put(LogicalDatastoreType.OPERATIONAL, internalNode(topoId, nodeId), node);
+        tx.put(LogicalDatastoreType.OPERATIONAL, internalNode(topoId, nodeId), node, true);
         return node;
     }
 
@@ -103,7 +108,7 @@ public class NrpDao  {
     {
         verifyTx();
 
-        tx.put(LogicalDatastoreType.OPERATIONAL,topo(topoId).child(Link.class, link.getKey()),link);
+        tx.put(LogicalDatastoreType.OPERATIONAL,topo(topoId).child(Link.class, link.getKey()), link, true);
         return link;
     }
 
@@ -203,11 +208,7 @@ public class NrpDao  {
     }
 
     public static InstanceIdentifier<Node> internalNode(String topoId, String nodeId) {
-        return systemNode(new Uuid(nodeId));
-    }
-
-    public static InstanceIdentifier<Node> internalNode(String topoId, Uuid nodeId) {
-        return topo(topoId).child(Node.class, new NodeKey(nodeId));
+        return topo(topoId).child(Node.class, new NodeKey(new Uuid(nodeId)));
     }
 
     public static InstanceIdentifier<Node> abstractNode() {

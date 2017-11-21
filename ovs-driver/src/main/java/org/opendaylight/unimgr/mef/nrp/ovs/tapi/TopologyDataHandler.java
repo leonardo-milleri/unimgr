@@ -73,7 +73,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
         ReadWriteTransaction tx = dataBroker.newReadWriteTransaction();
 
         NrpDao dao = new NrpDao(tx);
-        dao.createSystemNode(OVS_NODE, null);
+        dao.createSystemNode(OVS_NODE, null, new Uuid(OVS_ENCAP_TOPOLOGY));
 
         Futures.addCallback(tx.submit(), new FutureCallback<Void>() {
             @Override
@@ -199,7 +199,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
         nodeEdgeList.add(new Uuid(link.getSource().getSourceTp().getValue()));
         nodeEdgeList.add(new Uuid(link.getDestination().getDestTp().getValue()));
         builder.setUuid(new Uuid(link.getLinkId().getValue())).setNodeEdgePoint(nodeEdgeList);
-        dao.updateInternalLink(OVS_ENCAP_TOPOLOGY, builder.build());
+        dao.updateLink(OVS_ENCAP_TOPOLOGY, builder.build());
     }
 
     BiConsumer<List<? extends DataObject>,NrpDao> updateLinkToOvsInternalTopoAction = (list, dao) -> {
@@ -220,11 +220,11 @@ public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
         nodeEdgeList.add(new Uuid(link.getSource().getSourceTp().getValue()));
         nodeEdgeList.add(new Uuid(link.getDestination().getDestTp().getValue()));
         builder.setUuid(new Uuid(link.getLinkId().getValue())).setNodeEdgePoint(nodeEdgeList);
-        dao.deleteInternalLink(OVS_ENCAP_TOPOLOGY, builder.build());
+        dao.deleteLink(OVS_ENCAP_TOPOLOGY, builder.build());
     }
 
     private void deleteNodeToOvsInternalTopo(NrpDao dao, Node node) {
-        dao.deleteInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId());
+        dao.deleteInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId().getValue());
     }
 
     private void updateNodeToOvsInternalTopo(NrpDao dao, Node node) {
@@ -232,7 +232,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
         if (node.getTerminationPoint() != null) {
             edgePoints = node.getTerminationPoint().stream().map(tp -> toOwnedNodeEdgePoint(tp)).collect(Collectors.toList());
         }
-        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId(), edgePoints);
+        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId().getValue(), edgePoints);
     }
 
     private void addNodeToOvsInternalTopo(NrpDao dao, Node node) {
@@ -240,7 +240,7 @@ public class TopologyDataHandler implements DataTreeChangeListener<Topology> {
         if (node.getTerminationPoint() != null) {
             edgePoints = node.getTerminationPoint().stream().map(tp -> toOwnedNodeEdgePoint(tp)).collect(Collectors.toList());
         }
-        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId(), edgePoints);
+        dao.updateInternalNode(OVS_ENCAP_TOPOLOGY, node.getNodeId().getValue(), edgePoints);
     }
 
     private OwnedNodeEdgePoint toOwnedNodeEdgePoint(TerminationPoint tp) {
